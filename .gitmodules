@@ -1,0 +1,3 @@
+[submodule "external/Kophi"]
+	path = external/Kophi
+	url = https://github.com/1whatleytay/Kophi.git
