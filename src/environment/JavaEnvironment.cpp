@@ -40,7 +40,11 @@ JavaEnvironmentInstance::JavaEnvironmentInstance(JavaEnvironmentMachineClass &ty
     }
 }
 
+JavaEnvironmentArray::JavaEnvironmentArray(JavaArrayType type,
+                                           JavaInt size) : type(type), size(size), arrayData(size) {}
+
 JavaTypeAny JavaEnvironmentStack::popValue() {
+    if (empty()) throw std::exception();
     JavaTypeAny result = top();
     pop();
     return result;
@@ -136,7 +140,7 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
         JavaInstruction instruction = (JavaInstruction) code->code[pc];
         const JavaInstructionInfo &info = lookupInstruction(instruction);
 
-//        Utils::log(createDisasm(method.parent, &code->code[pc], info.length));
+//        Utils::log(createDisasm(method.parent, &code->code[pc], info.length, pc));
 //        Utils::log(frame.debugStack());
 
         switch (instruction) {
@@ -187,17 +191,26 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
                 frame.stack.push({.valueInt = -1});
                 break;
 
+            case JavaInstruction::AStore_0:
             case JavaInstruction::IStore_0:
-                frame.locals[0].valueInt = frame.stack.popValue().valueInt;
+                frame.locals[0] = frame.stack.popValue();
                 break;
+            case JavaInstruction::AStore_1:
             case JavaInstruction::IStore_1:
-                frame.locals[1].valueInt = frame.stack.popValue().valueInt;
+                frame.locals[1] = frame.stack.popValue();
                 break;
+            case JavaInstruction::AStore_2:
             case JavaInstruction::IStore_2:
-                frame.locals[2].valueInt = frame.stack.popValue().valueInt;
+                frame.locals[2] = frame.stack.popValue();
                 break;
+            case JavaInstruction::AStore_3:
             case JavaInstruction::IStore_3:
-                frame.locals[3].valueInt = frame.stack.popValue().valueInt;
+                frame.locals[3] = frame.stack.popValue();
+                break;
+
+            case JavaInstruction::AStore:
+            case JavaInstruction::IStore:
+                frame.locals[code->code[pc + 1]] = frame.stack.popValue();
                 break;
 
             case JavaInstruction::Iadd:
@@ -216,6 +229,9 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
                 frame.stack.push({.valueInt = frame.stack.popValue().valueInt / value});
                 break;
             }
+            case JavaInstruction::Iinc:
+                frame.locals[code->code[pc + 1]].valueInt += code->code[pc + 2];
+                break;
 
             case JavaInstruction::ALoad_0:
             case JavaInstruction::ILoad_0:
@@ -239,6 +255,22 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
                 frame.stack.push(frame.locals[code->code[pc + 1]]);
                 break;
 
+
+            case JavaInstruction::IaLoad: {
+                JavaInt index = frame.stack.popValue().valueInt;
+                JavaEnvironmentArray *array = (JavaEnvironmentArray *)frame.stack.popValue().valueRef;
+                frame.stack.push(array->arrayData[index]);
+                break;
+            }
+
+            case JavaInstruction::IaStore: {
+                JavaTypeAny value = frame.stack.popValue();
+                JavaInt index = frame.stack.popValue().valueInt;
+                JavaEnvironmentArray *array = (JavaEnvironmentArray *)frame.stack.popValue().valueRef;
+                array->arrayData[index] = value;
+                break;
+            }
+
             case JavaInstruction::Pop:
                 frame.stack.pop();
                 break;
@@ -258,62 +290,70 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
                     standardClass->getMethod(envId).function(context);
                 } else {
                     JavaEnvironmentClass *envClass = getClass(methodRef->getClass()->getName());
-                    frame.stack.push(
-                        run(envClass->getMethod(envId), frame,
-                            instruction == JavaInstruction::InvokeVirtual
-                            || instruction == JavaInstruction::InvokeSpecial).value);
+                    JavaReturnType returnValue = run(envClass->getMethod(envId), frame,
+                        instruction == JavaInstruction::InvokeVirtual
+                        || instruction == JavaInstruction::InvokeSpecial);
+                    if (returnValue.type != JavaType::Void) frame.stack.push(returnValue.value);
                 }
+                break;
+            }
+            case JavaInstruction::Goto: {
+                short offset = (code->code[pc + 1] << 8) | code->code[pc + 2];
+                pc += offset;
+                pc -= info.length;
                 break;
             }
 
             case JavaInstruction::Ifeq:
                 if (frame.stack.popValue().valueInt == 0)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::Ifne:
                 if (frame.stack.popValue().valueInt != 0)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::Ifle:
                 if (frame.stack.popValue().valueInt <= 0)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::Iflt:
                 if (frame.stack.popValue().valueInt < 0)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::Ifge:
                 if (frame.stack.popValue().valueInt >= 0)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::Ifgt:
                 if (frame.stack.popValue().valueInt > 0)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
 
             case JavaInstruction::If_icmpeq:
                 if (frame.stack.popValue().valueInt == frame.stack.popValue().valueInt)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::If_icmpne:
                 if (frame.stack.popValue().valueInt != frame.stack.popValue().valueInt)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::If_icmple:
                 if (frame.stack.popValue().valueInt >= frame.stack.popValue().valueInt)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
             case JavaInstruction::If_icmplt:
                 if (frame.stack.popValue().valueInt > frame.stack.popValue().valueInt)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
-            case JavaInstruction::If_icmpge:
-                if (frame.stack.popValue().valueInt <= frame.stack.popValue().valueInt)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+            case JavaInstruction::If_icmpge: {
+                JavaInt value1 = frame.stack.popValue().valueInt, value2 = frame.stack.popValue().valueInt;
+                if (value1 <= value2)
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
+            }
             case JavaInstruction::If_icmpgt:
                 if (frame.stack.popValue().valueInt < frame.stack.popValue().valueInt)
-                    pc += (code->code[pc + 1] << 8) | code->code[pc + 2];
+                    pc += ((code->code[pc + 1] << 8) | code->code[pc + 2]) - info.length;
                 break;
 
             case JavaInstruction::IReturn:
@@ -363,9 +403,22 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
                 }
                 break;
             }
+            case JavaInstruction::NewArray: {
+                JavaInt size = frame.stack.popValue().valueInt;
+                JavaArrayType type = (JavaArrayType)code->code[pc + 1];
+                frame.stack.push({ .valueRef = new JavaEnvironmentArray(type, size) });
+                break;
+            }
+
+            case JavaInstruction::ArrayLength: {
+                JavaEnvironmentArray *array = (JavaEnvironmentArray *)frame.stack.popValue().valueRef;
+                frame.stack.push({ .valueInt = array->size });
+                break;
+            }
 
             default:
-                Utils::log("Unimplemented instruction\n" + createDisasm(method.parent, &code->code[pc], info.length));
+                Utils::log("Unimplemented instruction\n"
+                + createDisasm(method.parent, &code->code[pc], info.length, pc));
                 break;
         }
 

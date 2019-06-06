@@ -32,6 +32,27 @@ public:
     explicit JavaEnvironmentInstance(JavaEnvironmentMachineClass &type);
 };
 
+enum class JavaArrayType {
+    Boolean = 4,
+    Char = 5,
+    Float = 6,
+    Double = 7,
+    Byte = 8,
+    Short = 9,
+    Int = 10,
+    Long = 11,
+};
+
+class JavaEnvironmentArray {
+public:
+    JavaArrayType type;
+    JavaInt size;
+
+    std::vector<JavaTypeAny> arrayData;
+
+    JavaEnvironmentArray(JavaArrayType type, JavaInt size);
+};
+
 class JavaEnvironmentStack : public std::stack<JavaTypeAny> {
 public:
     JavaTypeAny popValue();

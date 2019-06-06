@@ -28,17 +28,25 @@ const JavaEnvironmentMachineMethod &JavaEnvironmentMachineClass::getMethod(const
 namespace Java {
     namespace Io {
         namespace PrintStream {
-            void println(Context context) {
+            void printlnString(Context context) {
                 const char *text = (const char *) context.frame.stack.popValue().valueRef;
                 JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
 
                 Utils::log(std::string(text));
             }
 
+            void printlnInt(Context context) {
+                JavaInt value = context.frame.stack.popValue().valueInt;
+                JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
+
+                Utils::log(std::to_string(value));
+            }
+
             JavaEnvironmentMachineClass createClass() {
                 JavaEnvironmentMachineClass thisClass = JavaEnvironmentMachineClass("java/io/PrintStream");
                 thisClass.methods = {
-                    {JavaIdentifier("println", "(Ljava/lang/String;)V"), println}
+                    {JavaIdentifier("println", "(Ljava/lang/String;)V"), printlnString},
+                    {JavaIdentifier("println", "(I)V"), printlnInt}
                 };
 
                 return thisClass;
