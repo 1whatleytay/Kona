@@ -1,4 +1,4 @@
-add_library(environment
+add_library(environment STATIC
         include/JavaEnvironment.h
 
         JavaEnvironment.cpp)

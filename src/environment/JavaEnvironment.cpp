@@ -155,6 +155,11 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
                         frame.stack.push({.valueRef = (char *) text->getText().c_str()});
                         break;
                     }
+                    case JavaConstantTag::Integer: {
+                        JavaConstantInteger *integer = JavaConstantInteger::cast(constant);
+                        frame.stack.push({.valueInt = integer->value});
+                        break;
+                    }
                     default:
                         Utils::log("Unimplemented tag " + std::to_string((unsigned) constant->tag));
                         throw std::exception();

@@ -1,6 +1,8 @@
 #include <JavaMachine.h>
 #include <JavaEnvironment.h>
 
+#include <iostream>
+
 typedef JavaEnvironmentMachineContext Context;
 
 JavaEnvironmentMachineClass::JavaEnvironmentMachineClass(std::string name) : name(std::move(name)) {}
@@ -32,21 +34,36 @@ namespace Java {
                 const char *text = (const char *) context.frame.stack.popValue().valueRef;
                 JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
 
-                Utils::log(std::string(text));
+                std::cout << text << std::endl;
             }
 
             void printlnInt(Context context) {
                 JavaInt value = context.frame.stack.popValue().valueInt;
                 JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
 
-                Utils::log(std::to_string(value));
+                std::cout << value << std::endl;
+            }
+
+            void println(Context context) {
+                JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
+
+                std::cout << std::endl;
+            }
+
+            void printString(Context context) {
+                const char *text = (const char *) context.frame.stack.popValue().valueRef;
+                JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
+
+                std::cout << text;
             }
 
             JavaEnvironmentMachineClass createClass() {
                 JavaEnvironmentMachineClass thisClass = JavaEnvironmentMachineClass("java/io/PrintStream");
                 thisClass.methods = {
                     {JavaIdentifier("println", "(Ljava/lang/String;)V"), printlnString},
-                    {JavaIdentifier("println", "(I)V"), printlnInt}
+                    {JavaIdentifier("println", "(I)V"), printlnInt},
+                    {JavaIdentifier("println", "()V"), println},
+                    {JavaIdentifier("print", "(Ljava/lang/String;)V"), printString},
                 };
 
                 return thisClass;

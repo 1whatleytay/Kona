@@ -1,4 +1,4 @@
-add_library(machine
+add_library(machine STATIC
         include/JavaMachine.h
 
         JavaMachine.cpp)
