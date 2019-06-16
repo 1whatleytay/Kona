@@ -5,6 +5,26 @@
 
 typedef JavaEnvironmentMachineContext Context;
 
+char *newString(const char *old) {
+    char *newValue = new char[strlen(old)];
+    strcpy(newValue, old);
+
+    return newValue;
+}
+
+int popInt(Context context) {
+    return context.frame.stack.popValue().valueInt;
+}
+
+template <typename T>
+T *popRef(Context context) {
+    return (T *)context.frame.stack.popValue().valueRef;
+}
+
+JavaEnvironmentInstance *popInst(Context context) {
+    return (JavaEnvironmentInstance *)context.frame.stack.popValue().valueRef;
+}
+
 JavaEnvironmentMachineClass::JavaEnvironmentMachineClass(std::string name) : name(std::move(name)) {}
 
 JavaFieldDescriptor &JavaEnvironmentMachineClass::getField(const JavaIdentifier &identifier) {
@@ -14,7 +34,8 @@ JavaFieldDescriptor &JavaEnvironmentMachineClass::getField(const JavaIdentifier 
         }
     }
 
-    throw std::exception();
+    throw Utils::GenericException("MissingMachineField",
+        "Machine class " + name + " is missing field " + identifier.toString());
 }
 
 const JavaEnvironmentMachineMethod &JavaEnvironmentMachineClass::getMethod(const JavaIdentifier &identifier) {
@@ -24,35 +45,76 @@ const JavaEnvironmentMachineMethod &JavaEnvironmentMachineClass::getMethod(const
         }
     }
 
-    throw std::exception();
+    throw Utils::GenericException("MissingMachineMethod",
+        "Machine class " + name + " is missing method " + identifier.toString());
 }
 
 namespace Java {
+    namespace Util {
+        namespace Scanner {
+            void constructor(Context context) {
+                popInst(context);
+                popInst(context);
+            }
+
+            void nextLine(Context context) {
+                popInst(context);
+
+                std::string out;
+                std::cin >> out;
+
+                context.frame.stack.push({.valueRef = newString(out.c_str())});
+            }
+
+            JavaEnvironmentMachineClass createClass() {
+                JavaEnvironmentMachineClass thisClass = JavaEnvironmentMachineClass("java/util/Scanner");
+                thisClass.methods = {
+                    {JavaIdentifier("<init>", "(Ljava/io/InputStream;)V"), constructor},
+                    {JavaIdentifier("nextLine", "()Ljava/lang/String;"), nextLine},
+                };
+
+                return thisClass;
+            }
+
+            JavaEnvironmentMachineClass thisClass = createClass();
+        }
+    }
+
     namespace Io {
+        namespace InputStream {
+            JavaEnvironmentMachineClass createClass() {
+                JavaEnvironmentMachineClass thisClass = JavaEnvironmentMachineClass("java/io/InputStream");
+
+                return thisClass;
+            }
+
+            JavaEnvironmentMachineClass thisClass = createClass();
+        }
+
         namespace PrintStream {
             void printlnString(Context context) {
-                const char *text = (const char *) context.frame.stack.popValue().valueRef;
-                JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
+                const char *text = popRef<const char>(context);
+                popInst(context);
 
                 std::cout << text << std::endl;
             }
 
             void printlnInt(Context context) {
-                JavaInt value = context.frame.stack.popValue().valueInt;
-                JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
+                JavaInt value = popInt(context);
+                popInst(context);
 
                 std::cout << value << std::endl;
             }
 
             void println(Context context) {
-                JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
+                popInst(context);
 
                 std::cout << std::endl;
             }
 
             void printString(Context context) {
-                const char *text = (const char *) context.frame.stack.popValue().valueRef;
-                JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) context.frame.stack.popValue().valueRef;
+                const char *text = popRef<const char>(context);
+                popInst(context);
 
                 std::cout << text;
             }
@@ -76,7 +138,7 @@ namespace Java {
     namespace Lang {
         namespace Object {
             void construct(Context context) {
-
+                popInst(context);
             }
 
             JavaEnvironmentMachineClass createClass() {
@@ -91,9 +153,29 @@ namespace Java {
             JavaEnvironmentMachineClass thisClass = createClass();
         }
 
+        namespace String {
+            void equals(Context context) {
+                const char *a = popRef<const char>(context);
+                const char *b = popRef<const char>(context);
+
+                context.frame.stack.push({.valueInt=(strcmp(a, b) == 0)});
+            }
+
+            JavaEnvironmentMachineClass createClass() {
+                JavaEnvironmentMachineClass thisClass = JavaEnvironmentMachineClass("java/lang/String");
+                thisClass.methods = {
+                    {JavaIdentifier("equals", "(Ljava/lang/Object;)Z"), equals}
+                };
+
+                return thisClass;
+            }
+
+            JavaEnvironmentMachineClass thisClass = createClass();
+        }
+
         namespace StringBuilder {
             void construct(Context context) {
-                context.frame.stack.pop();
+                popInst(context);
             }
 
             void appendString(Context context) {
@@ -157,7 +239,9 @@ namespace Java {
                 JavaEnvironmentMachineClass thisClass = JavaEnvironmentMachineClass("java/lang/System");
                 thisClass.fields = {
                     JavaFieldDescriptor("out", "Ljava/io/PrintStream;", true,
-                                        {.valueRef = new JavaEnvironmentInstance(Java::Io::PrintStream::thisClass)}),
+                        {.valueRef = new JavaEnvironmentInstance(Java::Io::PrintStream::thisClass)}),
+                    JavaFieldDescriptor("in", "Ljava/io/InputStream;", true,
+                        {.valueRef = new JavaEnvironmentInstance(Java::Io::InputStream::thisClass)}),
                 };
 
                 return thisClass;
@@ -198,9 +282,13 @@ namespace Java {
 
 std::vector<JavaEnvironmentMachineClass> getStandard() {
     return {
+        Java::Util::Scanner::thisClass,
+
+        Java::Io::InputStream::thisClass,
         Java::Io::PrintStream::thisClass,
 
         Java::Lang::Object::thisClass,
+        Java::Lang::String::thisClass,
         Java::Lang::StringBuilder::thisClass,
         Java::Lang::System::thisClass,
         Java::Lang::Math::thisClass,

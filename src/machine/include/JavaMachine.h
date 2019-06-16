@@ -11,7 +11,6 @@
 using namespace Kophi;
 
 class JavaEnvironment;
-
 class JavaEnvironmentFrame;
 
 class JavaEnvironmentMachineContext {

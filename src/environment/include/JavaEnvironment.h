@@ -14,10 +14,15 @@
 
 using namespace Kophi;
 
+class JavaJar;
 const JavaIdentifier mainId = JavaIdentifier("main", "([Ljava/lang/String;)V");
 
-class JavaEnvironmentClass : public JavaClass {
+class JavaEnvironmentClass {
 public:
+    std::unordered_map<std::string, JavaTypeAny> fields;
+
+    const JavaClass &java;
+
     const JavaMethod &getMethod(const JavaIdentifier &id);
 
     explicit JavaEnvironmentClass(const JavaClass &java);
@@ -68,23 +73,20 @@ public:
     std::string debugStack();
 
     JavaEnvironmentFrame(unsigned localSize, unsigned stackSize);
-
     JavaEnvironmentFrame(unsigned localSize, unsigned stackSize,
                          JavaEnvironmentFrame &lastFrame, const std::string &descriptor, bool refernce);
 };
 
 class JavaEnvironment {
     std::vector<JavaEnvironmentClass> classes;
-    JavaEnvironmentClass &main;
+    std::string mainClass;
 
     std::vector<JavaEnvironmentMachineClass> standard;
 
     JavaEnvironmentClass *getClass(const std::string &name);
-
     JavaEnvironmentMachineClass *getStandardClass(const std::string &name);
 
     JavaReturnType execute(const JavaMethod &method, const JavaAttributeCode *code, JavaEnvironmentFrame &frame);
-
     JavaReturnType run(const JavaMethod &method, JavaEnvironmentFrame &lastFrame, bool reference);
 
     void run(const JavaMethod &method);
@@ -94,6 +96,7 @@ public:
 
     JavaEnvironmentClass &loadClass(const JavaClass &java);
 
+    explicit JavaEnvironment(const JavaJar &jar);
     explicit JavaEnvironment(const JavaClass &java);
 };
 

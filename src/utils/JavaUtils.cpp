@@ -7,7 +7,11 @@ bool JavaIdentifier::matches(const JavaIdentifier &identifier) const {
 }
 
 bool JavaIdentifier::matches(const JavaProperty &property) const {
-    return property.getName() == name && property.getDescriptor() == descriptor;
+    return property->getName() == name && property->getDescriptor() == descriptor;
+}
+
+std::string JavaIdentifier::toString() const {
+    return descriptor + " " + name;
 }
 
 JavaIdentifier::JavaIdentifier(std::string name, std::string descriptor)

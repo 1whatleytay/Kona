@@ -13,6 +13,18 @@ namespace Utils {
         Arguments(int count, char **args);
     };
 
+    class GenericException : public std::exception {
+        std::string name;
+        std::string message;
+    public:
+        const char *what() const noexcept override;
+
+        GenericException(std::string name, std::string message);
+    };
+
+    std::string trim(const std::string &text);
+    std::vector<std::string> split(const std::string &text, char delim);
+
     void log(const std::string& text);
 }
 

@@ -1,9 +1,11 @@
 #include <JavaEnvironment.h>
 
+#include <JavaJar.h>
+
 #include <sstream>
 
 const JavaMethod &JavaEnvironmentClass::getMethod(const JavaIdentifier &id) {
-    for (const JavaMethod &method : methods) {
+    for (const JavaMethod &method : java.methods) {
         if (id.matches(method)) {
             return method;
         }
@@ -12,14 +14,18 @@ const JavaMethod &JavaEnvironmentClass::getMethod(const JavaIdentifier &id) {
     throw std::exception();
 }
 
-JavaEnvironmentClass::JavaEnvironmentClass(const JavaClass &java) : JavaClass(java) {}
+JavaEnvironmentClass::JavaEnvironmentClass(const JavaClass &java) : java(java) {
+    for (const JavaField &field : java.fields) {
+        hasAccessFlag(field.)
+    }
+}
 
 JavaEnvironmentInstance::JavaEnvironmentInstance(JavaEnvironmentClass &type, bool isStatic) {
-    for (const JavaField &field : type.fields) {
-        if (hasAccessFlag(field.accessFlags, AccessFlags::Static) == isStatic) {
-            fields[field.getName()] = {0};
+    for (const JavaField &field : type.java.fields) {
+        if (hasAccessFlag(field->accessFlags, AccessFlags::Static) == isStatic) {
+            fields[field->getName()] = {0};
 
-            const JavaAttribute &constantValue = field.searchAttributes("Constant");
+            const JavaAttribute &constantValue = field->searchAttributes("Constant");
             if (constantValue) {
                 JavaConstant constant = JavaAttributeConstantValue::cast(constantValue)->getConstant();
                 switch (constant->tag) {
@@ -113,9 +119,9 @@ JavaEnvironmentFrame::JavaEnvironmentFrame(unsigned localSize, unsigned stackSiz
 }
 
 JavaEnvironmentClass *JavaEnvironment::getClass(const std::string &name) {
-    for (JavaEnvironmentClass &java : classes) {
-        if (java.getThisClass()->getName() == name) {
-            return &java;
+    for (JavaEnvironmentClass &type : classes) {
+        if (type.java.getThisClass()->getName() == name) {
+            return &type;
         }
     }
 
@@ -140,15 +146,15 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
         JavaInstruction instruction = (JavaInstruction) code->code[pc];
         const JavaInstructionInfo &info = lookupInstruction(instruction);
 
-//        Utils::log(createDisasm(method.parent, &code->code[pc], info.length, pc));
-//        Utils::log(frame.debugStack());
+        Utils::log(createDisasm(method->parent, &code->code[pc], info.length, pc));
+        Utils::log(frame.debugStack());
 
         switch (instruction) {
             case JavaInstruction::Nop:
                 break;
 
             case JavaInstruction::Ldc: {
-                JavaConstant constant = method.parent.pool[code->code[pc + 1]];
+                JavaConstant constant = method->parent.pool[code->code[pc + 1]];
                 switch (constant->tag) {
                     case JavaConstantTag::String: {
                         JavaConstantString *text = JavaConstantString::cast(constant);
@@ -287,7 +293,7 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
             case JavaInstruction::InvokeSpecial: // TODO: These two need to be implemented properly.
             case JavaInstruction::InvokeStatic: {
                 PoolIndex index = (code->code[pc + 1] << 8) | code->code[pc + 2];
-                JavaConstantMethodRef *methodRef = JavaConstantMethodRef::cast(method.parent.pool[index]);
+                JavaConstantMethodRef *methodRef = JavaConstantMethodRef::cast(method->parent.pool[index]);
                 JavaIdentifier envId = JavaIdentifier(methodRef->getNameAndType());
                 JavaEnvironmentMachineClass *standardClass = getStandardClass(methodRef->getClass()->getName());
                 if (standardClass) {
@@ -295,6 +301,9 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
                     standardClass->getMethod(envId).function(context);
                 } else {
                     JavaEnvironmentClass *envClass = getClass(methodRef->getClass()->getName());
+                    if (!envClass)
+                        throw Utils::GenericException("MissingClass",
+                            "Cannot find class " + methodRef->getClass()->getName());
                     JavaReturnType returnValue = run(envClass->getMethod(envId), frame,
                         instruction == JavaInstruction::InvokeVirtual
                         || instruction == JavaInstruction::InvokeSpecial);
@@ -368,14 +377,14 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
 
             case JavaInstruction::GetField: {
                 PoolIndex index = (code->code[pc + 1] << 8) | code->code[pc + 2];
-                JavaConstantFieldRef *fieldRef = JavaConstantFieldRef::cast(method.parent.pool[index]);
+                JavaConstantFieldRef *fieldRef = JavaConstantFieldRef::cast(method->parent.pool[index]);
                 JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) frame.stack.popValue().valueRef;
                 frame.stack.push(instance->fields[fieldRef->getNameAndType()->getName()]);
                 break;
             }
             case JavaInstruction::PutField: {
                 PoolIndex index = (code->code[pc + 1] << 8) | code->code[pc + 2];
-                JavaConstantFieldRef *fieldRef = JavaConstantFieldRef::cast(method.parent.pool[index]);
+                JavaConstantFieldRef *fieldRef = JavaConstantFieldRef::cast(method->parent.pool[index]);
                 JavaTypeAny value = frame.stack.popValue();
                 JavaEnvironmentInstance *instance = (JavaEnvironmentInstance *) frame.stack.popValue().valueRef;
                 instance->fields[fieldRef->getNameAndType()->getName()] = value;
@@ -383,13 +392,18 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
             }
             case JavaInstruction::GetStatic: {
                 PoolIndex index = (code->code[pc + 1] << 8) | code->code[pc + 2];
-                JavaConstantFieldRef *fieldRef = JavaConstantFieldRef::cast(method.parent.pool[index]);
+                JavaConstantFieldRef *fieldRef = JavaConstantFieldRef::cast(method->parent.pool[index]);
                 JavaEnvironmentMachineClass *standardClass = getStandardClass(fieldRef->getClass()->getName());
                 if (standardClass) {
                     frame.stack.push(
                         standardClass->getField(
                             JavaIdentifier(fieldRef->getNameAndType())).value);
                 } else {
+                    JavaEnvironmentClass *loadedClass = getClass(fieldRef->getClass()->getName());
+                    if (!loadedClass)
+                        throw Utils::GenericException("MissingClass",
+                            "Cannot find class " + fieldRef->getClass()->getName());
+
                     throw std::exception();
                 }
                 break;
@@ -397,13 +411,17 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
 
             case JavaInstruction::New: {
                 PoolIndex index = (code->code[pc + 1] << 8) | code->code[pc + 2];
-                JavaConstantClass *type = JavaConstantClass::cast(method.parent.pool[index]);
+                JavaConstantClass *type = JavaConstantClass::cast(method->parent.pool[index]);
                 JavaEnvironmentMachineClass *standardClass = getStandardClass(type->getName());
                 if (standardClass) {
                     JavaEnvironmentInstance *instance = new JavaEnvironmentInstance(*standardClass);
                     frame.stack.push({.valueRef = instance});
                 } else {
-                    JavaEnvironmentInstance *instance = new JavaEnvironmentInstance(*getClass(type->getName()), false);
+                    JavaEnvironmentClass *loadedClass = getClass(type->getName());
+                    if (!loadedClass)
+                        throw Utils::GenericException("MissingClass", "Cannot find class " + type->getName());
+
+                    JavaEnvironmentInstance *instance = new JavaEnvironmentInstance(*loadedClass, false);
                     frame.stack.push({.valueRef = instance});
                 }
                 break;
@@ -423,7 +441,7 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
 
             default:
                 Utils::log("Unimplemented instruction\n"
-                + createDisasm(method.parent, &code->code[pc], info.length, pc));
+                + createDisasm(method->parent, &code->code[pc], info.length, pc));
                 break;
         }
 
@@ -434,22 +452,22 @@ JavaReturnType JavaEnvironment::execute(const JavaMethod &method,
 }
 
 JavaReturnType JavaEnvironment::run(const JavaMethod &method, JavaEnvironmentFrame &lastFrame, bool reference) {
-    JavaAttributeCode *code = method.getCode();
+    JavaAttributeCode *code = method->getCode();
     JavaEnvironmentFrame frame = JavaEnvironmentFrame(code->maxLocals, code->maxStack,
-                                                      lastFrame, method.getDescriptor(), reference);
+                                                      lastFrame, method->getDescriptor(), reference);
 
     return execute(method, code, frame);
 }
 
 void JavaEnvironment::run(const JavaMethod &method) {
-    JavaAttributeCode *code = method.getCode();
+    JavaAttributeCode *code = method->getCode();
     JavaEnvironmentFrame frame = JavaEnvironmentFrame(code->maxLocals, code->maxStack);
 
     execute(method, code, frame);
 }
 
 void JavaEnvironment::run() {
-    run(main.getMethod(mainId));
+    run(getClass(mainClass)->getMethod(mainId));
 }
 
 JavaEnvironmentClass &JavaEnvironment::loadClass(const JavaClass &java) {
@@ -457,4 +475,15 @@ JavaEnvironmentClass &JavaEnvironment::loadClass(const JavaClass &java) {
     return classes[classes.size() - 1];
 }
 
-JavaEnvironment::JavaEnvironment(const JavaClass &java) : main(loadClass(java)), standard(getStandard()) {}
+JavaEnvironment::JavaEnvironment(const JavaClass &java)
+    : mainClass(java.getThisClass()->getName()), standard(getStandard()) {
+    loadClass(java);
+}
+
+JavaEnvironment::JavaEnvironment(const JavaJar &jar) : JavaEnvironment(*jar[jar.mainIndex]) {
+    for (std::shared_ptr<JavaClass> java : jar) {
+        if (mainClass != java->getThisClass()->getName()) {
+            loadClass(*java);
+        }
+    }
+}

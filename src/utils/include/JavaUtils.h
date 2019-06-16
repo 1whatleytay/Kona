@@ -42,6 +42,8 @@ public:
     bool matches(const JavaIdentifier &identifier) const;
     bool matches(const JavaProperty &property) const;
 
+    std::string toString() const;
+
     JavaIdentifier(std::string name, std::string descriptor);
     explicit JavaIdentifier(const JavaConstantNameAndType *nameAndType);
 };
